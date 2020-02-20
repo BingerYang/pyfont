@@ -14,21 +14,22 @@ The documentation is hosted at [https://github.com/BingerYang/pyfont](https://gi
 from pyfont import FontAttr, FontDraw
 from PIL import Image
 
-image = Image.new('RGBA', (int(400), int(400)), (255, 255, 255, 0))
-font = FontAttr(size=20, limit_width=220)
-obj = FontDraw(bg=image, font=font)
+image = Image.new('RGBA', (int(400), int(400)), (1, 1, 1, 0))
+path = 'C:\Windows\Fonts\simsun.ttc'
+font = FontAttr(path=path, size=20, limit_width=220, fill_color=(1, 1, 1, 255))
+# obj = FontDraw(bg=image, font=font)
+obj = FontDraw(font=font)
 
-# 通过控制 limit_width 与 传入回调返回，决定是否换行，或者丢弃
-# progress=None 超过不处理
-# progress 返回值有空，丢弃多余，返回多余的 line[index:]（换行处理）
-def progress(index, line):
+# 通过控制 limit_width，limit_count 与 传入回调返回，决定是否换行，或者丢弃
+# limit_text_cb=None 不处理（超过）
+# limit_text_cb 返回值False丢弃多余，返回True（保留换行）
+def limit_text_cb(index, line):
     print('index:', index, line[index:])
-    # return line[index:]
-    pass
+    return True
 
 
-offset = obj.write(text="我们是中国人，我爱我的祖国\n你好", progress=progress)
-img = obj.crop(offset)
+result = obj.write(text="我们是中国人，我爱我的祖国\n你好", limit_text_cb=limit_text_cb)
+img = result.img
 print(img.size)
 img.show()
 print(font.size, font.line_height)
@@ -40,11 +41,13 @@ print(font.size, font.line_height)
 from pyfont import FontAttr, FontDraw
 from PIL import Image
 
-image = Image.new('RGBA', (int(400), int(400)), (255, 255, 255, 0))
-font = FontAttr(size=20, limit_width=220)
-obj = FontDraw(bg=image, font=font)
+image = Image.new('RGBA', (int(400), int(400)), (1, 1, 1, 0))
+path = 'C:\Windows\Fonts\simsun.ttc'
+font = FontAttr(path=path, size=20, limit_width=220, fill_color=(1, 1, 1, 255))
+# obj = FontDraw(bg=image, font=font)
+obj = FontDraw(font=font)
 
-offset = obj.write_by_change_size(text="我们是中国人，我爱我的祖国\n你好")
-img = obj.crop(offset)
+result = obj.write_by_change_size(text="我们是中国人，我爱我的祖国\n你好")
+img =result.img
 img.show()
 ```

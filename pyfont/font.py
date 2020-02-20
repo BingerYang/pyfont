@@ -2,8 +2,11 @@
 # @Time     : 2019-12-04 16:21
 # @Author   : binger
 
+__all__ = ["FontDraw", "FontAttr", "FontDrawResult"]
+
 from PIL import Image, ImageDraw, ImageFont
 from operator import itemgetter
+from collections import namedtuple
 import math
 
 
@@ -13,8 +16,8 @@ import math
 class FontAttr(object):
 
     def __init__(self, size, path, line_height=None, line_spacing_par=0.1, char_spacing=None, char_spacing_par=0.1,
-                 variable_spacing=True, limit_height=None, limit_width=None, align="left", line_sep='\n',
-                 fill_color=None):
+                 variable_spacing=True, limit_height=None, limit_width=None, limit_count=None, align="left",
+                 limit_line=None, line_sep='\n', fill_color=None):
         self.path = path
         self._size = size
         self.variable_spacing = variable_spacing
@@ -26,7 +29,11 @@ class FontAttr(object):
         self.line_sep = line_sep
         self.limit_width = limit_width
         self.limit_height = limit_height
-        self.fill_color = fill_color
+        self.limit_count = limit_count and int(limit_count)
+        self.limit_line = limit_line and int(limit_line)
+        # limit_count, limit_width 达到限制后处理，执行处理
+        # limit_count, limit_line 默认取值从1开始
+        self.fill_color = fill_color  # RGBA
         self._font = None
 
     @property
@@ -47,25 +54,87 @@ class FontAttr(object):
         return self._font
 
     def reset_font(self):
+        """重新产生pillow字体模型（自已库与大小的绑定）"""
         self._font = ImageFont.truetype(self.path, size=self.size)
 
 
+FontDrawResult = namedtuple('FontDrawResult', ['offset', 'start', 'lines', 'img'])
+
+
 class FontDraw(object):
-    def __init__(self, bg, font):
+    def __init__(self, font, bg=None):
         self._font = font
         self._bg = bg
+        self.is_write_on_bg = bool(bg)
+        self._draw = bg and ImageDraw.Draw(bg)
+
+    def __init_draw(self, text, is_truncated=False):
+        size = self.max_canvas_size(text, is_truncated)
+        color = self._font.fill_color
+        self._bg = bg = Image.new('RGBA', size, color=(*color[:3], 0))
         self._draw = ImageDraw.Draw(bg)
 
-    def get_char_size(self, text, path, size):
+    def max_canvas_size(self, text, is_truncated=False):
+        """根据文字，近似计算画布大小"""
+        lines = text.strip().split(self._font.line_sep)
+        width_list, height_list = [], []
+        for line in lines:
+
+            if len(line.strip()) == 0:
+                continue
+
+            if is_truncated:
+                w, h = None, None
+                w_max, w_min = None, None
+                if self._font.limit_count:
+                    w_list, h_list = [], []
+                    for i in range(0, len(line), self._font.limit_count):
+                        _w, _h = self.get_line_size(line[i: i + self._font.limit_count])
+                        w_list.append(_w)
+                        h_list.append(_h)
+                    w_max = max(w_list) if w_list else 0
+                    w_min = min(w_list) if w_list else 0
+                    h = len(h_list) * self._font.line_height
+                if self._font.limit_width:
+                    _w, _h = self.get_line_size(line)
+                    w2 = self._font.limit_width
+                    h_max = math.ceil(_w / (w_min or w2)) * self._font.line_height
+                    if h:
+                        h = max([h, h_max])
+                    else:
+                        h = h_max
+
+                    if w_max:
+                        w = max([w_max, w2])
+                    else:
+                        w = w2
+
+            else:
+                w, h = self.get_line_size(line)
+                h = self._font.line_height
+            width_list.append(w)
+            height_list.append(h)
+        return math.ceil(max(width_list) if width_list else 0), math.ceil(sum(height_list))
+
+    @staticmethod
+    def get_char_size(c, path, size):
         """
         获得一个字的宽和高
-        :param text:
+        :param c:
+        :param path:
         :param size:
         :return: (width, height)
         """
-        return ImageFont.truetype(font=path, size=size).getsize(text)
+        assert len(c) == 1
+        return ImageFont.truetype(font=path, size=size).getsize(c)
 
     def get_line_size(self, line, size=None):
+        """
+        获取一行的宽度
+        :param line:
+        :param size:
+        :return: (width, height)
+        """
 
         font_obj = ImageFont.truetype(font=self._font.path, size=size or self._font.size)
         x_list = []
@@ -78,54 +147,103 @@ class FontDraw(object):
         y = max(y_list) if y_list else 0
         return x, y
 
-    def write_line(self, line, position=None, align="left", progress=None):
+    def write_line(self, line, position=None, align="left", limit_text_cb=None):
+        """
+
+        :param line:
+        :param position:
+        :param align:
+        :param limit_text_cb: progress(index: 序列号，line: 写入行内容， state: 引起判断的条件，字数或者长度限制)，
+        返回为True代表换行，False代表丢弃，limit_text_cb
+        :return: (x方法的偏移量，y方向的偏移量), 写的个数，剩余的待输入的内容
+        """
         res = ""  # 作为判断时候换行使用
         x, y = position = position or (0, 0)
         h_list = []
         align = 1 if align == "left" else -1
+        count = 0
         for i, c in enumerate(line):
             if i != 0:
                 x += self._font.char_spacing * align
-            c_w, c_h = self.get_char_size(text=c, path=self._font.path, size=self._font.size)
+            c_w, c_h = self.get_char_size(c=c, path=self._font.path, size=self._font.size)
 
-            if progress and x + c_w * align > self._font.limit_width:
-                res = progress(i, line) or ''
-                break
+            if limit_text_cb:
+                # 为什么不定义限制，默认自动换行，limit_text_cb 处理，如果默认为None，则会出现换行或者截断误会抓取位置
+                if self._font.limit_count and i >= self._font.limit_count - 1:
+                    # 按每行文字个数执行换行保留, 还是截断丢弃
+                    if limit_text_cb(i, line, 'limit_count'):
+                        res = line[i:]
+                    else:
+                        res = ''
+                    break
+                if self._font.limit_width and x + c_w * align > self._font.limit_width:
+                    # 按达到预定宽度，判断是换行，还是丢弃剩余的
+                    if limit_text_cb(i, line, 'limit_width'):
+                        res = line[i:]
+                    else:
+                        res = ''
+                    break
 
             self._draw.text(xy=(x, y), text=c, font=self._font.font, fill=self._font.fill_color)
             x += c_w * align
             h_list.append(c_h)
+            count = i + 1
 
-        return (x - position[0], max(h_list) if h_list else 0), res
+        return (x - position[0], max(h_list) if h_list else 0), count, res
 
-    def write(self, text, position=None, align='left', progress=None):
+    def write(self, text, position=None, align='left', limit_text_cb=None):
         """
-        有宽度限制输入文字，达到限制，换行或者丢失
+                有宽度限制输入文字，达到限制，换行或者丢失
+        :param text:
+        :param position:
+        :param align:
+        :param limit_text_cb: 1. 函数没定义，不做处理 2. 返回值为True，执行保留换行， 2. False 执行截断丢弃
+        :return:
         """
         self._font.reset_font()
+        self._draw or self.__init_draw(text, is_truncated=bool(limit_text_cb))
         x, y = position = position or (0, 0)
 
         lines = text.strip().split(self._font.line_sep)
 
         line_width = []
         n = 0
+        new_lines = []
         for line in lines:
             while line:
                 if len(line.strip()) == 0:
                     continue
 
-                offset, line = self.write_line(line, position=(x, y + 1), align=align, progress=progress)
+                offset, count, rest_line = self.write_line(line, position=(x, y + 1), align=align,
+                                                           limit_text_cb=limit_text_cb)
+                new_lines.append(line[:count])
+                line = rest_line
+
                 # 不加,会出现字体不自然
                 line_width.append(offset[0])
                 if n == 0:
-                    y += offset[1]
+                    y += offset[1]  # 首行
                 else:
                     y += self._font.line_height
                 n += 1
+                # 行数限制：如果换行次多余规定的次数，则忽略后面的
+                if self._font.limit_line and n >= self._font.limit_line:
+                    break
 
-        return max(line_width) if line_width else 0, y - position[1]
+        offset = max(line_width) if line_width else 0, y - position[1]
+        if not self.is_write_on_bg:
+            self._bg = self._crop(offset, start=position)
 
-    def write_by_change_size(self, text, position=None, align='left', progress=None):
+        result = FontDrawResult(
+            offset=offset,
+            start=position,
+            lines=new_lines,
+            img=self._bg
+        )
+        return result
+
+    def write_by_change_size(self, text, position=None, align='left', limit_text_cb=None):
+        """在运行字体变小时调用"""
         lines = text.strip().split(self._font.line_sep)
         if not lines:
             return
@@ -176,82 +294,33 @@ class FontDraw(object):
                         break
                     else:
                         new_size -= 1
-        return self.write(text, position=position, align=align, progress=progress)
+        return self.write(text, position=position, align=align, limit_text_cb=limit_text_cb)
 
-    def crop(self, offset, start=None):
+    def _crop(self, offset, start=None):
         start = start or (0, 0)
         return self._bg.crop((start[0], start[1], start[0] + offset[0] + 1, start[1] + offset[1] + 1))
 
 
-class FontImage(object):
-    def __init__(self, bg, font, size, fill=None):
-        """
-        :param bg:
-        :param font: 字体库路径
-        :param size: 字体大小
-        :param fill:
-        """
-        self._bg = bg
-        self._draw = ImageDraw.Draw(bg)
-        self._font = ImageFont.truetype(font=font, size=size)
-        self._fill_color = fill and tuple(fill)
-        self._font_family_path = font
+if __name__ == '__main__':
+    # -*- coding: utf-8 -*-
+    from pyfont import FontAttr, FontDraw
+    from PIL import Image
 
-    def get_char_size(self, text, size):
-        """
-        获得一个字的宽和高
-        :param text:
-        :param size:
-        :return: (width, height)
-        """
-        if size:
-            _font = ImageFont.truetype(font=self._font_family_path, size=size)
-        else:
-            _font = self._font
-        return _font.getsize(text)
+    image = Image.new('RGBA', (int(400), int(400)), (1, 1, 1, 0))
+    path = 'C:\Windows\Fonts\simsun.ttc'
+    font = FontAttr(path=path, size=20, limit_width=220, fill_color=(1, 1, 1, 255))
+    # obj = FontDraw(bg=image, font=font)
+    obj = FontDraw(font=font)
 
-    def write(self, text, line_height, char_spacing, position=None, size=None, align="left", line_sep="\n"):
-        """
+    # 通过控制 limit_width，limit_count 与 传入回调返回，决定是否换行，或者丢弃
+    # limit_text_cb=None 不处理（超过）
+    # limit_text_cb 返回值False丢弃多余，返回True（保留换行）
+    def limit_text_cb(index, line, state):
+        print('index:', index, line[index:], state)
+        return False
 
-        :param text: 输入的文本
-        :param line_height: 行高
-        :param char_spacing: 字符间距
-        :param position: 输入的文字
-        :param size: 文字大小
-        :param align: 对齐方向
-        :param line_sep: 分隔符
-        :return:
-        """
-        x, y = position = position or (0, 0)
-
-        lines = text.strip().split(line_sep)
-        line_width = []
-        for i, line in enumerate(lines):
-            if len(line.strip()) == 0:
-                continue
-
-            if i != 0:
-                y += line_height
-            offset = self.write_line(line, spacing=char_spacing, position=(x, y + 1), size=size, align=align)
-            line_width.append(offset[0])
-            y += offset[1]
-        return max(line_width) if line_width else 0, y - position[1]
-
-    def write_line(self, line, spacing=5, position=None, size=None, align="left"):
-        x, y = position = position or (0, 0)
-        h_list = []
-        align = 1 if align == "left" else -1
-        for i, c in enumerate(line):
-            if i != 0:
-                x += spacing * align
-            c_w, c_h = self.get_char_size(text=c, size=size)
-            self._draw.text(xy=(x, y), text=c, font=self._font, fill=self._fill_color)
-            x += c_w * align
-            h_list.append(c_h)
-
-        return x - position[0], max(h_list)
-
-    def crop(self, offset, start=None):
-        start = start or (0, 0)
-
-        return self._bg.crop((start[0], start[1], start[0] + offset[0] + 1, start[1] + offset[1] + 1))
+    result = obj.write(text="我们是中国人，我爱我的祖国\n你好", limit_text_cb=limit_text_cb)
+    img = result.img
+    print(img.size)
+    img.show()
+    print(font.size, font.line_height)
