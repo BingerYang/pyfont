@@ -108,7 +108,9 @@ class FontDraw(object):
                         w = max([w_max, w2])
                     else:
                         w = w2
-
+                else:
+                    w, h = self.get_line_size(line)
+                    h = self._font.line_height
             else:
                 w, h = self.get_line_size(line)
                 h = self._font.line_height
@@ -123,7 +125,7 @@ class FontDraw(object):
         :param c:
         :param path:
         :param size:
-        :return: (width, height)
+        :return: (limit_width, height)
         """
         assert len(c) == 1
         return ImageFont.truetype(font=path, size=size).getsize(c)
@@ -133,7 +135,7 @@ class FontDraw(object):
         获取一行的宽度
         :param line:
         :param size:
-        :return: (width, height)
+        :return: (limit_width, height)
         """
 
         font_obj = ImageFont.truetype(font=self._font.path, size=size or self._font.size)
