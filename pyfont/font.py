@@ -17,10 +17,15 @@ class FontAttr(object):
 
     def __init__(self, size, path, line_height=None, line_spacing_par=0.1, char_spacing=None, char_spacing_par=0.1,
                  variable_spacing=True, limit_height=None, limit_width=None, limit_count=None, align="left",
-                 limit_line=None, line_sep='\n', fill_color=None):
+                 limit_line=None, line_sep='\n', fill_color=None, clear_margin=False):
         self.path = path
         self._size = size
+
+        # 三个一起使用，配合字体大小变化重新计算 line_height 和 char_spacing
         self.variable_spacing = variable_spacing
+        self._line_height = line_height
+        self._char_spacing = char_spacing
+
         self.char_spacing_par = char_spacing_par
         self.line_spacing_par = line_spacing_par
         self.line_height = line_height or int(size * (1 + self.line_spacing_par))
@@ -34,6 +39,7 @@ class FontAttr(object):
         # limit_count, limit_width 达到限制后处理，执行处理
         # limit_count, limit_line 默认取值从1开始
         self.fill_color = fill_color  # RGBA
+        self.clear_margin = clear_margin  # 默认从上，左开始血，即清理的下和右的边距
         self._font = None
 
     @property
@@ -44,8 +50,8 @@ class FontAttr(object):
     def size(self, size):
         self._size = size
         if self.variable_spacing:
-            self.line_height = int(self.size * (1 + self.line_spacing_par))
-            self.char_spacing = int(self.size * self.char_spacing_par)
+            self.line_height = self._line_height or int(size * (1 + self.line_spacing_par))
+            self.char_spacing = self._char_spacing or int(size * self.char_spacing_par)
 
     @property
     def font(self):
@@ -58,7 +64,7 @@ class FontAttr(object):
         self._font = ImageFont.truetype(self.path, size=self.size)
 
 
-FontDrawResult = namedtuple('FontDrawResult', ['offset', 'start', 'lines', 'img'])
+FontDrawResult = namedtuple('FontDrawResult', ['offset', 'start', 'lines', 'img', 'h_margin'])
 
 
 class FontDraw(object):
@@ -211,12 +217,14 @@ class FontDraw(object):
         line_width = []
         n = 0
         new_lines = []
+        margin_h = [0, 0]
         for line in lines:
             while line:
                 if len(line.strip()) == 0:
                     continue
 
-                offset, count, rest_line = self.write_line(line, position=(x, y + 1), align=align,
+                # offset, count, rest_line = self.write_line(line, position=(x, y + 1), align=align,
+                offset, count, rest_line = self.write_line(line, position=(x, y), align=align,
                                                            limit_text_cb=limit_text_cb)
                 new_lines.append(line[:count])
                 line = rest_line
@@ -224,23 +232,31 @@ class FontDraw(object):
                 # 不加,会出现字体不自然
                 line_width.append(offset[0])
                 if n == 0:
-                    y += offset[1]  # 首行
-                else:
-                    y += self._font.line_height
+                    margin_h[0] = math.ceil((self._font.line_height - offset[1]) / 2)
+                margin_h[1] = int(self._font.line_height - offset[1])
+
+                y += self._font.line_height
                 n += 1
                 # 行数限制：如果换行次多余规定的次数，则忽略后面的
                 if self._font.limit_line and n >= self._font.limit_line:
                     break
 
-        offset = max(line_width) if line_width else 0, y - position[1]
+        offset = [max(line_width) if line_width else 0, y - position[1]]
         if not self.is_write_on_bg:
+            all_h = offset[1]
+            if self._font.clear_margin:
+                offset[1] = all_h - margin_h[1]
+                margin_h[1] -= margin_h[0]
+            else:
+                margin_h = [0, 0]
             self._bg = self._crop(offset, start=position)
 
         result = FontDrawResult(
-            offset=offset,
+            offset=tuple(offset),
             start=position,
             lines=new_lines,
-            img=self._bg
+            img=self._bg,
+            h_margin = margin_h
         )
         return result
 
@@ -300,7 +316,7 @@ class FontDraw(object):
 
     def _crop(self, offset, start=None):
         start = start or (0, 0)
-        return self._bg.crop((start[0], start[1], start[0] + offset[0] + 1, start[1] + offset[1] + 1))
+        return self._bg.crop((start[0], start[1], start[0] + offset[0], start[1] + offset[1]))
 
 
 if __name__ == '__main__':

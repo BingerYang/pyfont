@@ -2,7 +2,7 @@
 # @Time     : 2019-11-01 10:02
 # @Author   : binger
 
-# from pyfont.html_to_image import html2image
+from pyfont.html_to_image import html2image
 from jinja2 import Template
 from pyfont import FontAttr, FontDraw
 import os
@@ -289,6 +289,5 @@ class FontDrawByHtml(object):
         obj = cls()
         obj._request_size = request_area_size
         obj.build(font)
-        # obj.save("11.html")
-        return obj.html
-        # return obj.to_image()
+
+        return obj.to_image()
