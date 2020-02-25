@@ -36,7 +36,7 @@ print(font.size, font.line_height)
 
 ```
 
-   2. write_by_change_size 通过 limit_width, limit_height 适当的缩小字体范围，以适应区域
+   2. limit_width, limit_height 适当的缩小字体范围，以适应区域
 ```python
 from pyfont import FontAttr, FontDraw
 from PIL import Image
@@ -46,8 +46,10 @@ path = 'C:\Windows\Fonts\simsun.ttc'
 font = FontAttr(path=path, size=20, limit_width=220, fill_color=(1, 1, 1, 255))
 # obj = FontDraw(bg=image, font=font)
 obj = FontDraw(font=font)
-
-result = obj.write_by_change_size(text="我们是中国人，我爱我的祖国\n你好")
+text="我们是中国人，我爱我的祖国\n你好"
+size = obj.get_size_at_limit_range(text, font.size)
+font.size = size
+result = obj.write(text)
 img =result.img
 img.show()
 ```

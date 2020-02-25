@@ -136,14 +136,15 @@ class FontDraw(object):
         assert len(c) == 1
         return ImageFont.truetype(font=path, size=size).getsize(c)
 
-    def get_line_size(self, line, size=None):
+    def get_line_size(self, line, size=None, char_spacing=None):
         """
         获取一行的宽度
         :param line:
         :param size:
+        :param char_spacing:
         :return: (limit_width, height)
         """
-
+        char_spacing = char_spacing or self._font.char_spacing
         font_obj = ImageFont.truetype(font=self._font.path, size=size or self._font.size)
         x_list = []
         y_list = []
@@ -151,7 +152,7 @@ class FontDraw(object):
             _size = font_obj.getsize(c)
             x_list.append(_size[0])
             y_list.append(_size[1])
-        x = sum(x_list) + (len(line) - 1) * self._font.char_spacing
+        x = sum(x_list) + (len(line) - 1) * char_spacing
         y = max(y_list) if y_list else 0
         return x, y
 
@@ -256,33 +257,34 @@ class FontDraw(object):
             start=position,
             lines=new_lines,
             img=self._bg,
-            h_margin = margin_h
+            h_margin=margin_h
         )
         return result
 
-    def write_by_change_size(self, text, position=None, align='left', limit_text_cb=None):
-        """在运行字体变小时调用"""
+    def get_size_at_limit_range(self, text, size, char_spacing_par=0.1, min_size=12):
+        """在运行字体变小时调用, 通过限制获取最大的字体"""
         lines = text.strip().split(self._font.line_sep)
         if not lines:
             return
-
-        handle = lambda i, line: [i, *self.get_line_size(line, self._font.size)]
+        _char_spacing = int(size * char_spacing_par)
+        handle = lambda i, line: [i, *self.get_line_size(line, size, char_spacing=_char_spacing)]
         size_iter = list(map(lambda msg: handle(*msg), enumerate(lines)))
         w_max = max(size_iter, key=itemgetter(1))
         h_max = max(size_iter, key=itemgetter(2))
-        h_max_size = int(h_max[2])
+        h_max_length = int(h_max[2])
         h_max_index = h_max[0]
-        w_max_size = int(h_max[1])
+        w_max_lenght = int(w_max[1])
         w_max_index = w_max[0]
 
-        new_size = None
+        _temp_new_size = None
+        result_size = size
         n = len(lines)
         if self._font.limit_height:
             is_first = True
             while True:
-                if n == 1 and h_max_size > self._font.limit_height:
+                if n == 1 and (h_max_length > self._font.limit_height):
                     if is_first:
-                        new_size = self._font.limit_height
+                        _temp_new_size = self._font.limit_height
                 else:
 
                     # limit_size = math.ceil(
@@ -291,28 +293,40 @@ class FontDraw(object):
                     limit_size = math.ceil(
                         self._font.limit_height / (n + (n - 1) * self._font.line_spacing_par)
                     )
-                    if h_max_size > limit_size:
+                    if h_max_length > limit_size:
                         if is_first:
-                            new_size = limit_size
+                            _temp_new_size = limit_size
                     else:
                         break
-                new_size -= 1
-                h_max_size = self.get_line_size(lines[h_max_index], new_size)[1]
-        if new_size:
-            self._font.size = new_size
-            w_max_size = self.get_line_size(lines[w_max_index], new_size)[0]
+
+                # 字体下限
+                if _temp_new_size == min_size:
+                    return min_size
+
+                _temp_new_size -= 1
+                h_max_length = \
+                    self.get_line_size(lines[h_max_index], _temp_new_size, int(_temp_new_size * char_spacing_par))[1]
+        if _temp_new_size:
+            result_size = _temp_new_size
+            w_max_lenght = \
+                self.get_line_size(lines[w_max_index], _temp_new_size, int(_temp_new_size * char_spacing_par))[0]
 
         if self._font.limit_width:
             line = lines[w_max_index]
-            if w_max_size > self._font.limit_width:
-                new_size = math.ceil(self._font.limit_width * self._font.size / w_max_size)
+            if w_max_lenght > self._font.limit_width:
+                _temp_new_size = math.ceil(self._font.limit_width * result_size / w_max_lenght)
                 while True:
-                    if self.get_line_size(line, size=new_size)[0] < self._font.limit_width:
-                        self._font.size = new_size
+                    if self.get_line_size(line, _temp_new_size, int(_temp_new_size * char_spacing_par))[
+                        0] < self._font.limit_width:
+                        result_size = _temp_new_size
                         break
                     else:
-                        new_size -= 1
-        return self.write(text, position=position, align=align, limit_text_cb=limit_text_cb)
+                        # 字体下限
+                        if _temp_new_size == min_size:
+                            return min_size
+
+                        _temp_new_size -= 1
+        return result_size
 
     def _crop(self, offset, start=None):
         start = start or (0, 0)
@@ -323,12 +337,16 @@ if __name__ == '__main__':
     # -*- coding: utf-8 -*-
     from pyfont import FontAttr, FontDraw
     from PIL import Image
+    import os
 
     image = Image.new('RGBA', (int(400), int(400)), (1, 1, 1, 0))
-    path = 'C:\Windows\Fonts\simsun.ttc'
-    font = FontAttr(path=path, size=20, limit_width=220, fill_color=(1, 1, 1, 255))
+    path = '../simkai.ttf'
+    path = os.path.abspath(path)
+    print(path)
+    font = FontAttr(path=path, size=20, limit_width=150, fill_color=(1, 1, 1, 255))
     # obj = FontDraw(bg=image, font=font)
     obj = FontDraw(font=font)
+
 
     # 通过控制 limit_width，limit_count 与 传入回调返回，决定是否换行，或者丢弃
     # limit_text_cb=None 不处理（超过）
@@ -337,8 +355,13 @@ if __name__ == '__main__':
         print('index:', index, line[index:], state)
         return False
 
-    result = obj.write(text="我们是中国人，我爱我的祖国\n你好", limit_text_cb=limit_text_cb)
+
+    text = "我们是中国人，我爱我的祖国\n你好"
+    size = obj.get_size_at_limit_range(text, font.size)
+    print("size: ", size)
+    # font.size = 10
+    result = obj.write(text=text, limit_text_cb=limit_text_cb)
     img = result.img
     print(img.size)
-    img.show()
+    img.save("font.png")
     print(font.size, font.line_height)

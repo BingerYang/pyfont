@@ -2,9 +2,9 @@
 # @Time     : 2019-11-01 10:02
 # @Author   : binger
 
-from pyfont.html_to_image import html2image
+from .html_to_image import html2image
 from jinja2 import Template
-from pyfont import FontAttr, FontDraw
+from . import FontAttr, FontDraw
 import os
 
 

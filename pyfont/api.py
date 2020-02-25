@@ -2,9 +2,9 @@
 # @Time     : 2019-11-08 10:08
 # @Author   : binger
 
-from pyfont.draw_by_html import EffectFont
-from pyfont.draw_by_html import FontDrawByHtml
-from pyfont import FontDraw, FontAttr
+from .draw_by_html import EffectFont
+from .draw_by_html import FontDrawByHtml
+from . import FontDraw, FontAttr
 from PIL import Image, ImageDraw, ImageFont
 
 

@@ -47,7 +47,7 @@ example:
     print(font.size, font.line_height)
 
 
-2. write_by_change_size 通过 limit_width, limit_height 适当的缩小字体范围，以适应区域
+2. 通过 limit_width, limit_height 适当的缩小字体范围，以适应区域
 
 ::
 
@@ -60,7 +60,10 @@ example:
     # obj = FontDraw(bg=image, font=font)
     obj = FontDraw(font=font)
 
-    result = obj.write_by_change_size(text="我们是中国人，我爱我的祖国\n你好")
+    text="我们是中国人，我爱我的祖国\n你好"
+    size = obj.get_size_at_limit_range(text, font.size)
+    font.size = size
+    result = obj.write(text=text)
     print(result.offset, result.lines)
     img = result.img
     print(img.size)
