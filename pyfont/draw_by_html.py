@@ -106,6 +106,7 @@ class EffectFont(object):
 
     @fill_color.setter
     def fill_color(self, color):
+        assert isinstance(color, tuple)
         self.base.fill_color = color
         self._fill_color = Color(color)
         self.gradient_enable = False

@@ -21,7 +21,7 @@ setup(
     version=__version__,
     packages=find_packages(exclude=['examples', 'tests']),
     url='https://github.com/BingerYang/{}'.format(root),
-    license='',
+    license='MITT',
     author=author,
     author_email=author_email,
     maintainer=maintainer,

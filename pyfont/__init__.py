@@ -4,7 +4,7 @@
 
 
 name = "pyfont"
-version_info = (0, 0, 2, 2002518)
+version_info = (0, 0, 2, 2002618)
 __version__ = ".".join([str(v) for v in version_info])
 __description__ = '生成文字图片'
 

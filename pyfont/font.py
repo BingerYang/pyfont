@@ -38,7 +38,7 @@ class FontAttr(object):
         self.limit_line = limit_line and int(limit_line)
         # limit_count, limit_width 达到限制后处理，执行处理
         # limit_count, limit_line 默认取值从1开始
-        self.fill_color = fill_color  # RGBA
+        self.fill_color = fill_color and tuple(fill_color)  # RGBA
         self.clear_margin = clear_margin  # 默认从上，左开始血，即清理的下和右的边距
         self._font = None
 
