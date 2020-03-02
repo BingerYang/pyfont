@@ -50,7 +50,7 @@ class FontFactory(object):
         if self.render_by_mixed and not self.is_effected():
             limit_text_cb = lambda *args, **kwargs: True
             _app = FontDraw(self._effect_font.base)
-            resp = _app.write(self._effect_font.text, align=self._effect_font.base.align, limit_text_cb=limit_text_cb)
+            resp = _app.write(self._effect_font.text, limit_text_cb=limit_text_cb)
             img = resp.img
         else:
             img = FontDrawByHtml.render_to_image(self._effect_font)

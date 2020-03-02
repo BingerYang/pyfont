@@ -67,6 +67,9 @@ class FontAttr(object):
 FontDrawResult = namedtuple('FontDrawResult', ['offset', 'start', 'lines', 'img', 'h_margin'])
 
 
+# 边距暂定：上无编剧，左右没有编剧，目前只有下有编剧
+# 清楚之后上下边距显示h_margin
+
 class FontDraw(object):
     def __init__(self, font, bg=None):
         self._font = font
@@ -115,10 +118,11 @@ class FontDraw(object):
                     else:
                         w = w2
                 else:
-                    w, h = self.get_line_size(line)
+                    w, _ = self.get_line_size(line)
                     h = self._font.line_height
             else:
-                w, h = self.get_line_size(line)
+                # 允许超出范围，计算每行真是宽度的最大值，最为宽
+                w, _ = self.get_line_size(line)
                 h = self._font.line_height
             width_list.append(w)
             height_list.append(h)
@@ -156,24 +160,27 @@ class FontDraw(object):
         y = max(y_list) if y_list else 0
         return x, y
 
-    def write_line(self, line, position=None, align="left", limit_text_cb=None):
+    def write_line(self, line, position=None, direct="right", limit_text_cb=None, is_write=True):
         """
 
         :param line:
         :param position:
-        :param align:
+        :param direct: 写的方向
         :param limit_text_cb: progress(index: 序列号，line: 写入行内容， state: 引起判断的条件，字数或者长度限制)，
         返回为True代表换行，False代表丢弃，limit_text_cb
+        :is_write: 是否写的动作
         :return: (x方法的偏移量，y方向的偏移量), 写的个数，剩余的待输入的内容
         """
         res = ""  # 作为判断时候换行使用
         x, y = position = position or (0, 0)
         h_list = []
-        align = 1 if align == "left" else -1
+        direct = 1 if direct == "right" else -1
         count = 0
+
         for i, c in enumerate(line):
             if i != 0:
-                x += self._font.char_spacing * align
+                x += self._font.char_spacing * direct
+
             c_w, c_h = self.get_char_size(c=c, path=self._font.path, size=self._font.size)
 
             if limit_text_cb:
@@ -185,32 +192,89 @@ class FontDraw(object):
                     else:
                         res = ''
                     break
-                if self._font.limit_width and x + c_w * align > self._font.limit_width:
+                # if self._font.limit_width and x + c_w * align > self._font.limit_width:
+                if self._font.limit_width and abs(x - position[0]) + c_w > self._font.limit_width:
                     # 按达到预定宽度，判断是换行，还是丢弃剩余的
                     if limit_text_cb(i, line, 'limit_width'):
                         res = line[i:]
                     else:
                         res = ''
                     break
-
-            self._draw.text(xy=(x, y), text=c, font=self._font.font, fill=self._font.fill_color)
-            x += c_w * align
+            if is_write:
+                self._draw.text(xy=(x, y), text=c, font=self._font.font, fill=self._font.fill_color)
+            x += c_w * direct
             h_list.append(c_h)
             count = i + 1
 
         return (x - position[0], max(h_list) if h_list else 0), count, res
 
-    def write(self, text, position=None, align='left', limit_text_cb=None):
+    def _write_text_line(self, line, position, direct="right"):
+        direct = 1 if direct == "right" else -1
+        x, y = position = position or (0, 0)
+        y_list = []
+        for c in line.strip():
+            c_w, c_h = self.get_char_size(c=c, path=self._font.path, size=self._font.size)
+            self._draw.text(xy=(x, y), text=c, font=self._font.font, fill=self._font.fill_color)
+            x += (c_w + self._font.char_spacing) * direct
+            y_list.append(c_h)
+
+        offset_x, offset_y = 0, 0
+        if y_list:
+            offset_y = max(y_list)
+            offset_x = x - self._font.char_spacing * direct - position[0] + 1
+        return offset_x, offset_y
+
+    def __get_limit_width_on_align(self, align="left", is_truncated=True):
+        """
+        在对齐特别是非左对齐的情况下：获取最大行宽
+        :param align:
+        :param is_truncated: 是否截断
+        :return:
+        """
+        limit_width = None
+        if align != "left":  # 非左对齐
+            if self._font.limit_width and is_truncated:
+                limit_width = self._font.limit_width
+            elif not self.is_write_on_bg:
+                limit_width = self._bg.size[0]
+            else:
+                limit_width = self.max_canvas_size(text=text, is_truncated=is_truncated)[0]
+        return limit_width
+
+    def __get_position_width_on_align(self, line, limit_width, align, start):
+        """
+        在对齐时候和特定的宽度限制时，获取写文字开始的位置
+        :param line: 带写的文字内容
+        :param limit_width: 在此宽度下
+        :param align: 在此对齐的条件下
+        :param start: 从此位置到 limit_width 的范围内
+        :return: 此行从左向开始书写的位置
+        """
+        cur_width = self.get_line_size(line)[0]
+        if cur_width >= limit_width:
+            _x = start
+        else:
+            if align == "center":
+                _x = start + int((limit_width - cur_width) / 2)  # - 1
+            else:
+                _x = start + limit_width - cur_width - 1
+
+        return _x
+
+    def write(self, text, position=None, limit_text_cb=None):
         """
                 有宽度限制输入文字，达到限制，换行或者丢失
         :param text:
         :param position:
-        :param align:
+        :param crop_transparent: 默认剪掉透明区域
         :param limit_text_cb: 1. 函数没定义，不做处理 2. 返回值为True，执行保留换行， 2. False 执行截断丢弃
         :return:
         """
         self._font.reset_font()
         self._draw or self.__init_draw(text, is_truncated=bool(limit_text_cb))
+        align = self._font.align
+        # 在对象时判断限制的宽，特别用于 非左对齐
+        limit_width = self.__get_limit_width_on_align(align=align, is_truncated=limit_text_cb)
         x, y = position = position or (0, 0)
 
         lines = text.strip().split(self._font.line_sep)
@@ -219,19 +283,30 @@ class FontDraw(object):
         n = 0
         new_lines = []
         margin_h = [0, 0]
+
         for line in lines:
             while line:
                 if len(line.strip()) == 0:
                     continue
 
-                # offset, count, rest_line = self.write_line(line, position=(x, y + 1), align=align,
-                offset, count, rest_line = self.write_line(line, position=(x, y), align=align,
-                                                           limit_text_cb=limit_text_cb)
-                new_lines.append(line[:count])
+                if not limit_width:
+                    # offset, count, rest_line = self.write_line(line, position=(x, y + 1), align=align,
+                    offset, count, rest_line = self.write_line(line, position=(x, y),
+                                                               limit_text_cb=limit_text_cb)
+                    prefix_line = line[:count]
+                    _x = x
+                else:
+                    # 有截断时获取行的偏移量
+                    offset, count, rest_line = self.write_line(line, position=(x, y),
+                                                               limit_text_cb=limit_text_cb, is_write=False)
+                    prefix_line = line[:count]
+                    _x = self.__get_position_width_on_align(prefix_line, limit_width=limit_width, align=align, start=x)
+                    offset = self._write_text_line(prefix_line, position=(_x, y))
+                new_lines.append(prefix_line)
                 line = rest_line
 
                 # 不加,会出现字体不自然
-                line_width.append(offset[0])
+                line_width.append(offset[0] + _x)
                 if n == 0:
                     margin_h[0] = math.ceil((self._font.line_height - offset[1]) / 2)
                 margin_h[1] = int(self._font.line_height - offset[1])
@@ -244,6 +319,7 @@ class FontDraw(object):
 
         offset = [max(line_width) if line_width else 0, y - position[1]]
         if not self.is_write_on_bg:
+
             all_h = offset[1]
             if self._font.clear_margin:
                 offset[1] = all_h - margin_h[1]
@@ -339,12 +415,13 @@ if __name__ == '__main__':
     from PIL import Image
     import os
 
-    image = Image.new('RGBA', (int(400), int(400)), (1, 1, 1, 0))
+    # image = Image.new('RGBA', (int(400), int(400)), (1, 1, 1, 0))
     path = '../simkai.ttf'
     path = os.path.abspath(path)
     print(path)
-    font = FontAttr(path=path, size=20, limit_width=150, fill_color=(1, 1, 1, 255))
+    font = FontAttr(path=path, size=20, limit_width=150, fill_color=(1, 1, 1, 255), align="left")
     # obj = FontDraw(bg=image, font=font)
+    font.clear_margin = True
     obj = FontDraw(font=font)
 
 
@@ -360,7 +437,9 @@ if __name__ == '__main__':
     size = obj.get_size_at_limit_range(text, font.size)
     print("size: ", size)
     # font.size = 10
+    # result = obj.write(text=text, limit_text_cb=limit_text_cb, align="left")
     result = obj.write(text=text, limit_text_cb=limit_text_cb)
+    # result = obj.write(text=text, limit_text_cb=limit_text_cb, align="right")
     img = result.img
     print(img.size)
     img.save("font.png")
