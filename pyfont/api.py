@@ -17,16 +17,26 @@ class FontFactory(object):
         assert isinstance(effect_font, EffectFont)
         self.render_by_mixed = render_by_mixed
         self._effect_font = effect_font
+        self.font_draw = None
 
     def is_effected(self):
         return any([self._effect_font.gradient_enable, self._effect_font.shadow_enable, self._effect_font.stroke_enable,
                     self._effect_font.weight != 'normal'])
 
     def get_line_size(self, size, text):
-        return FontDraw(self._effect_font.base).get_line_size(text, size=size)
+        if not self.font_draw:
+            self.font_draw = FontDraw(self._effect_font.base)
+        return self.font_draw.get_line_size(text, size=size)
 
     def get_max_canvas_size(self, text):
-        return FontDraw(self._effect_font.base).max_canvas_size(text, is_truncated=True)
+        if not self.font_draw:
+            self.font_draw = FontDraw(self._effect_font.base)
+        return self.font_draw.max_canvas_size(text, is_truncated=True)
+
+    def get_size_at_limit_range(self, text, size, char_spacing_par=0.1):
+        if not self.font_draw:
+            self.font_draw = FontDraw(self._effect_font.base)
+        return self.font_draw.get_size_at_limit_range(text, size, char_spacing_par=char_spacing_par)
 
     def get_text_size_at_width(self, size, text, width, spacing=4):
         effect_font = ImageFont.truetype(font=self._effect_font.base.path, size=size)
@@ -49,8 +59,9 @@ class FontFactory(object):
     def render_to_rng(self):
         if self.render_by_mixed and not self.is_effected():
             limit_text_cb = lambda *args, **kwargs: True
-            _app = FontDraw(self._effect_font.base)
-            resp = _app.write(self._effect_font.text, limit_text_cb=limit_text_cb)
+            if not self.font_draw:
+                self.font_draw = FontDraw(self._effect_font.base)
+            resp = self.font_draw.write(self._effect_font.text, limit_text_cb=limit_text_cb)
             img = resp.img
         else:
             img = FontDrawByHtml.render_to_image(self._effect_font)
@@ -61,9 +72,10 @@ if __name__ == '__main__':
     font = EffectFont()
     path = '../simkai.ttf'
     import os
+
     print(os.path.abspath(path))
     font.set_text_base(size=100, path=path)
-    font.base.clear_margin=True
+    font.base.clear_margin = True
     # font.shadow((80, 31, 191, 0.3), sigma=8, x=0, y=6)
     # font.gradient([("#da7eeb", 0), ("#9070d8", 0.5)], angle="center", type="radial")
     # font.fill_color = "#da7eeb"
