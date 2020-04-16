@@ -64,7 +64,7 @@ class FontAttr(object):
         self._font = ImageFont.truetype(self.path, size=self.size)
 
 
-FontDrawResult = namedtuple('FontDrawResult', ['offset', 'start', 'lines', 'img', 'h_margin'])
+FontDrawResult = namedtuple('FontDrawResult', ['offset', 'start', 'lines', 'img', 'cut_h_margin'])
 
 
 # 边距暂定：上无编剧，左右没有编剧，目前只有下有编剧
@@ -72,6 +72,7 @@ FontDrawResult = namedtuple('FontDrawResult', ['offset', 'start', 'lines', 'img'
 
 class FontDraw(object):
     def __init__(self, font, bg=None):
+        assert isinstance(font, FontAttr)
         self._font = font
         self._bg = bg
         self.is_write_on_bg = bool(bg)
@@ -142,7 +143,7 @@ class FontDraw(object):
 
     def get_line_size(self, line, size=None, char_spacing=None):
         """
-        获取一行的宽度
+        获取一行的宽度(仅仅文字长和宽)
         :param line:
         :param size:
         :param char_spacing:
@@ -177,6 +178,9 @@ class FontDraw(object):
         direct = 1 if direct == "right" else -1
         count = 0
 
+        _Font = ImageFont.truetype(font=self._font.path, size=self._font.size)
+        height = _Font.getsize("text")[1]
+        offset = math.ceil((self._font.line_height - height) / 2)
         for i, c in enumerate(line):
             if i != 0:
                 x += self._font.char_spacing * direct
@@ -201,12 +205,12 @@ class FontDraw(object):
                         res = ''
                     break
             if is_write:
-                self._draw.text(xy=(x, y), text=c, font=self._font.font, fill=self._font.fill_color)
+                self._draw.text(xy=(x, y + offset), text=c, font=self._font.font, fill=self._font.fill_color)
             x += c_w * direct
             h_list.append(c_h)
             count = i + 1
 
-        return (x - position[0], max(h_list) if h_list else 0), count, res
+        return (x - position[0], max(h_list) + offset if h_list else 0), count, res, (0, offset)
 
     def _write_text_line(self, line, position, direct="right"):
         direct = 1 if direct == "right" else -1
@@ -282,7 +286,7 @@ class FontDraw(object):
         line_width = []
         n = 0
         new_lines = []
-        margin_h = [0, 0]
+        cut_h_margin = [0, 0]
 
         for line in lines:
             while line:
@@ -290,15 +294,16 @@ class FontDraw(object):
                     continue
 
                 if not limit_width:
-                    # offset, count, rest_line = self.write_line(line, position=(x, y + 1), align=align,
-                    offset, count, rest_line = self.write_line(line, position=(x, y),
-                                                               limit_text_cb=limit_text_cb)
+                    # offset, count, rest_line, start_offset = self.write_line(line, position=(x, y + 1), align=align,
+                    offset, count, rest_line, start_offset = self.write_line(line, position=(x, y),
+                                                                             limit_text_cb=limit_text_cb)
                     prefix_line = line[:count]
                     _x = x
                 else:
                     # 有截断时获取行的偏移量
-                    offset, count, rest_line = self.write_line(line, position=(x, y),
-                                                               limit_text_cb=limit_text_cb, is_write=False)
+                    offset, count, rest_line, start_offset = self.write_line(line, position=(x, y),
+                                                                             limit_text_cb=limit_text_cb,
+                                                                             is_write=False)
                     prefix_line = line[:count]
                     _x = self.__get_position_width_on_align(prefix_line, limit_width=limit_width, align=align, start=x)
                     offset = self._write_text_line(prefix_line, position=(_x, y))
@@ -308,8 +313,8 @@ class FontDraw(object):
                 # 不加,会出现字体不自然
                 line_width.append(offset[0] + _x)
                 if n == 0:
-                    margin_h[0] = math.ceil((self._font.line_height - offset[1]) / 2)
-                margin_h[1] = int(self._font.line_height - offset[1])
+                    cut_h_margin[0] = start_offset[1]
+                cut_h_margin[1] = int(self._font.line_height - offset[1])
 
                 y += self._font.line_height
                 n += 1
@@ -320,12 +325,12 @@ class FontDraw(object):
         offset = [max(line_width) if line_width else 0, y - position[1]]
         if not self.is_write_on_bg:
 
-            all_h = offset[1]
             if self._font.clear_margin:
-                offset[1] = all_h - margin_h[1]
-                margin_h[1] -= margin_h[0]
+                position = position[0], position[1] + cut_h_margin[0]
+                offset[1] = offset[1] - cut_h_margin[1] - cut_h_margin[0]
             else:
-                margin_h = [0, 0]
+                cut_h_margin = [0, 0]
+
             self._bg = self._crop(offset, start=position)
 
         result = FontDrawResult(
@@ -333,7 +338,7 @@ class FontDraw(object):
             start=position,
             lines=new_lines,
             img=self._bg,
-            h_margin=margin_h
+            cut_h_margin=cut_h_margin
         )
         return result
 
@@ -416,12 +421,12 @@ if __name__ == '__main__':
     import os
 
     # image = Image.new('RGBA', (int(400), int(400)), (1, 1, 1, 0))
-    path = '../simkai.ttf'
+    path = '/Users/yangshujun/workspace/AI2Design/Font/fonts汉仪瘦金书.ttf'
     path = os.path.abspath(path)
     print(path)
-    font = FontAttr(path=path, size=20, limit_width=150, fill_color=(1, 1, 1, 255), align="left")
+    font = FontAttr(path=path, size=40, limit_width=300, fill_color=(1, 1, 1, 255), align="left")
     # obj = FontDraw(bg=image, font=font)
-    font.clear_margin = True
+    font.clear_margin = False
     obj = FontDraw(font=font)
 
 
@@ -440,7 +445,8 @@ if __name__ == '__main__':
     # result = obj.write(text=text, limit_text_cb=limit_text_cb, align="left")
     result = obj.write(text=text, limit_text_cb=limit_text_cb)
     # result = obj.write(text=text, limit_text_cb=limit_text_cb, align="right")
+    print(result.cut_h_margin)
     img = result.img
     print(img.size)
-    img.save("font.png")
+    img.show(title="123")
     print(font.size, font.line_height)
